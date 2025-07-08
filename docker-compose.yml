@@ -1,0 +1,112 @@
+version: "3.8"
+
+services:
+  baserow:
+    image: baserow/baserow:latest
+    container_name: baserow
+    environment:
+      - BASEROW_PUBLIC_URL=http://baserow:85
+    volumes:
+      - ./data/baserow:/baserow/data
+    ports:
+      - "85:80"
+    networks:
+      - automation-net
+    restart: unless-stopped
+    shm_size: 512mb
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    networks:
+      - automation-net
+    restart: unless-stopped
+
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:latest
+    container_name: kokoro-tts-gpu
+    volumes:
+      - ./data/kokoro:/data
+    ports:
+      - "8880:8880"
+    networks:
+      - automation-net
+    restart: unless-stopped
+
+  nca-toolkit:
+    image: stephengpope/no-code-architects-toolkit:latest
+    container_name: nca-toolkit
+    ports:
+      - "8080:8080"
+    environment:
+      - API_KEY=${API_KEY}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - S3_REGION=${S3_REGION}
+    volumes:
+      - ./data/nca-toolkit:/data
+    networks:
+      - automation-net
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:latest
+    container_name: n8n-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ./data/n8n-postgres:/var/lib/postgresql/data
+    networks:
+      - automation-net
+    restart: unless-stopped
+
+  n8n:
+    build:
+      context: ./n8n-ffmpeg
+    image: n8n-ffmpeg:latest
+    container_name: n8n-ffmpeg
+    ports:
+      - "5678:5678"
+    environment:
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=n8n-postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - ./data/n8n-data:/home/node/.n8n
+      - ./data/n8n-output:/data
+    networks:
+      - automation-net
+    restart: unless-stopped
+
+  # cloudflared:
+    # image: cloudflare/cloudflared:latest
+    # container_name: cloudflared
+    # command: tunnel --no-autoupdate run --token ${CF_TOKEN}
+    # volumes:
+      # - ./data/cloudflared:/data
+    # networks:
+      # - automation-net
+    # restart: unless-stopped
+
+networks:
+  automation-net:
+    driver: bridge
